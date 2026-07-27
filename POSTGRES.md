@@ -1,10 +1,14 @@
 # ERPNext on PostgreSQL (euidos pg-port)
 
-This fork (`euidos/erpnext`, branch `pg-port/version-16`) runs ERPNext on
+This fork (`euidos/erpnext-pg`, branch `pg-port/version-16`) runs ERPNext on
 PostgreSQL 17. Upstream ERPNext supports MariaDB only; the frappe framework's
 postgres support is official-but-experimental. Everything here keeps the
 MariaDB path byte-for-byte identical unless a comment marked `pg-port:` says
 otherwise, so rebases onto upstream `version-16` stay cheap.
+
+The **repo** is `erpnext-pg`; the **Frappe app** is still `erpnext`
+(`pyproject [project] name`), so `bench get-app <url>` lands it in
+`apps/erpnext` and `bench install-app erpnext` is unchanged.
 
 ## How the port works
 
