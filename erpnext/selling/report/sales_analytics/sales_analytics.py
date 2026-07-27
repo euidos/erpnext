@@ -529,8 +529,8 @@ class Analytics:
 			frappe.throw(_("Invalid Document Type {0}").format(self.filters.doc_type))
 
 		self.group_entries = frappe.db.sql(
-			f""" select * from (select "Order Types" as name, 0 as lft,
-			2 as rgt, '' as parent union select distinct order_type as name, 1 as lft, 1 as rgt, "Order Types" as parent
+			f""" select * from (select 'Order Types' as name, 0 as lft,
+			2 as rgt, '' as parent union select distinct order_type as name, 1 as lft, 1 as rgt, 'Order Types' as parent
 			from `tab{self.filters.doc_type}` where ifnull(order_type, '') != '') as b order by lft, name
 		""",
 			as_dict=1,

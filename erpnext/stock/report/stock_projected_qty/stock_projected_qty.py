@@ -300,7 +300,8 @@ def get_item_map(item_code, include_uom):
 			& (
 				(item.end_of_life > today())
 				| (item.end_of_life.isnull())
-				| (item.end_of_life == "0000-00-00")
+				# pg-port: zero dates are unrepresentable (and unparseable) on PG
+				| ((item.end_of_life == "0000-00-00") if frappe.db.db_type != "postgres" else (item.end_of_life.isnull()))
 			)
 			& (ExistsCriterion(frappe.qb.from_(bin).select(bin.name).where(bin.item_code == item.name)))
 		)

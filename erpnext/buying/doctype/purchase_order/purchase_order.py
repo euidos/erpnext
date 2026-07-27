@@ -419,7 +419,7 @@ class PurchaseOrder(BuyingController):
 
 	def check_modified_date(self):
 		mod_db = frappe.db.sql("select modified from `tabPurchase Order` where name = %s", self.name)
-		date_diff = frappe.db.sql(f"select '{mod_db[0][0]}' - '{cstr(self.modified)}' ")
+		date_diff = frappe.db.sql(f"select TIMEDIFF('{mod_db[0][0]}', '{cstr(self.modified)}')")
 
 		if date_diff and date_diff[0][0]:
 			msgprint(

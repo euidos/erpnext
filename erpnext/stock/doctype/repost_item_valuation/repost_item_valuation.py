@@ -329,14 +329,20 @@ class RepostItemValuation(Document):
 			"posting_time": self.posting_time,
 		}
 
+		# pg-port: TIMESTAMP(date, time) is MySQL-only; PG composes with date + time
+		ts = (
+			"(posting_date + posting_time) > (%(posting_date)s::date + %(posting_time)s::time)"
+			if frappe.db.db_type == "postgres"
+			else "TIMESTAMP(posting_date, posting_time) > TIMESTAMP(%(posting_date)s, %(posting_time)s)"
+		)
 		frappe.db.sql(
-			"""
+			f"""
 			update `tabRepost Item Valuation`
 			set status = 'Skipped'
 			WHERE item_code = %(item_code)s
 				and warehouse = %(warehouse)s
 				and name != %(name)s
-				and TIMESTAMP(posting_date, posting_time) > TIMESTAMP(%(posting_date)s, %(posting_time)s)
+				and {ts}
 				and docstatus = 1
 				and status = 'Queued'
 				and based_on = 'Item and Warehouse'

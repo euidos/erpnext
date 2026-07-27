@@ -142,7 +142,8 @@ def get_items_for_reorder() -> dict[str, list]:
 			& (
 				(item_table.end_of_life.isnull())
 				| (item_table.end_of_life > nowdate())
-				| (item_table.end_of_life == "0000-00-00")
+				# pg-port: zero dates are unrepresentable (and unparseable) on PG
+				| ((item_table.end_of_life == "0000-00-00") if frappe.db.db_type != "postgres" else (item_table.end_of_life.isnull()))
 			)
 		)
 	)

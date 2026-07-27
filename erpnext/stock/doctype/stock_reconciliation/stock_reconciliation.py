@@ -1222,7 +1222,7 @@ def get_items_for_stock_reco(warehouse, company):
 			and i.has_variants = 0
 			and IFNULL(i.disabled, 0) = 0
 			and id.company = %s
-		group by i.name
+		group by i.name, id.default_warehouse
 	""",
 		(lft, rgt, company),
 		as_dict=1,

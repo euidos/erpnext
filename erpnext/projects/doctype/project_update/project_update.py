@@ -47,7 +47,7 @@ def daily_reminder():
 		for drafts in draft:
 			number_of_drafts = drafts[0]
 		update = frappe.db.sql(
-			"""SELECT name,date,time,progress,progress_details FROM `tabProject Update` WHERE `tabProject Update`.project = %s AND date = DATE_ADD(CURRENT_DATE, INTERVAL -1 DAY);""",
+			"""SELECT name,date,time,progress,progress_details FROM `tabProject Update` WHERE `tabProject Update`.project = %s AND date = DATE_ADD(CURRENT_DATE, INTERVAL '-1' DAY);""",
 			project_name,
 		)
 		email_sending(project_name, frequency, date_start, date_end, progress, number_of_drafts, update)

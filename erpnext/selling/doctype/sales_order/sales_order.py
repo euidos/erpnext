@@ -1557,6 +1557,13 @@ def get_events(start, end, filters=None):
 
 	conditions = get_event_conditions("Sales Order", filters)
 
+	# pg-port: zero dates are unrepresentable (and unparseable) on PG
+	delivery_date_set = (
+		"`tabSales Order Item`.delivery_date is not null"
+		if frappe.db.db_type == "postgres"
+		else "ifnull(`tabSales Order Item`.delivery_date, '0000-00-00')!= '0000-00-00'"
+	)
+
 	data = frappe.db.sql(
 		f"""
 		select
@@ -1567,7 +1574,7 @@ def get_events(start, end, filters=None):
 			`tabSales Order`, `tabSales Order Item`
 		where `tabSales Order`.name = `tabSales Order Item`.parent
 			and `tabSales Order`.skip_delivery_note = 0
-			and (ifnull(`tabSales Order Item`.delivery_date, '0000-00-00')!= '0000-00-00') \
+			and ({delivery_date_set}) \
 			and (`tabSales Order Item`.delivery_date between %(start)s and %(end)s)
 			and `tabSales Order`.docstatus < 2
 			{conditions}

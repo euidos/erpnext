@@ -194,8 +194,10 @@ def item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=Fals
 		columns += ", " + ", ".join(extra_searchfields)
 
 	if "description" in searchfields:
-		columns += """, if(length(tabItem.description) > 40, \
-			concat(substr(tabItem.description, 1, 40), "..."), description) as description"""
+		# pg-port: backtick the table ref (unquoted mixed-case folds to lowercase
+		# on PG) and use single-quoted string literals
+		columns += """, if(length(`tabItem`.description) > 40, \
+			concat(substr(`tabItem`.description, 1, 40), '...'), description) as description"""
 
 	searchfields = searchfields + [
 		field
@@ -262,17 +264,17 @@ def item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=Fals
 	description_cond = ""
 	if frappe.db.estimate_count(doctype) < 50000:
 		# scan description only if items are less than 50000
-		description_cond = "or tabItem.description LIKE %(txt)s"
+		description_cond = "or `tabItem`.description LIKE %(txt)s"
 
 	return frappe.db.sql(
 		"""select
-			tabItem.name {columns}
-		from tabItem
-		where tabItem.docstatus < 2
-			and tabItem.disabled=0
-			and tabItem.has_variants=0
-			and (tabItem.end_of_life > %(today)s or ifnull(tabItem.end_of_life, '0000-00-00')='0000-00-00')
-			and ({scond} or tabItem.item_code IN (select parent from `tabItem Barcode` where barcode LIKE %(txt)s)
+			`tabItem`.name {columns}
+		from `tabItem`
+		where `tabItem`.docstatus < 2
+			and `tabItem`.disabled=0
+			and `tabItem`.has_variants=0
+			and (`tabItem`.end_of_life > %(today)s or {eol_null_cond})
+			and ({scond} or `tabItem`.item_code IN (select parent from `tabItem Barcode` where barcode LIKE %(txt)s)
 				{description_cond})
 			{fcond} {mcond}
 		order by
@@ -280,12 +282,16 @@ def item_query(doctype, txt, searchfield, start, page_len, filters, as_dict=Fals
 			if(locate(%(_txt)s, item_name), locate(%(_txt)s, item_name), 99999),
 			idx desc,
 			name, item_name
-		limit %(start)s, %(page_len)s """.format(
+		limit %(page_len)s offset %(start)s """.format(
 			columns=columns,
 			scond=searchfields,
 			fcond=get_filters_cond(doctype, filters, conditions).replace("%", "%%"),
 			mcond=get_match_cond(doctype).replace("%", "%%"),
 			description_cond=description_cond,
+			# pg-port: zero dates are unrepresentable (and unparseable) on PG
+			eol_null_cond="`tabItem`.end_of_life is null"
+			if frappe.db.db_type == "postgres"
+			else "ifnull(`tabItem`.end_of_life, '0000-00-00')='0000-00-00'",
 		),
 		{
 			"today": nowdate(),

@@ -145,6 +145,89 @@ CREATE OR REPLACE AGGREGATE group_concat(text) (
   PARALLEL = SAFE
 );
 
+-- TIMEDIFF(a, b): MySQL returns TIME; an interval compares/renders the same
+-- everywhere ERPNext consumes it.
+CREATE OR REPLACE FUNCTION timediff(timestamp, timestamp)
+RETURNS interval LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS 'SELECT $1 - $2';
+
+-- FIELD(x, a, b, ...): 1-based position of x in the list, 0 when absent.
+CREATE OR REPLACE FUNCTION field(text, VARIADIC text[])
+RETURNS integer LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS 'SELECT COALESCE(array_position($2, $1), 0)';
+
+-- timestamptz overloads: now() yields timestamptz, and PG does not implicitly
+-- cast timestamptz->timestamp during function resolution. timestamptz is the
+-- datetime category's preferred type, so unknown-literal args land here and
+-- typed timestamp columns still hit the exact overloads above — no ambiguity.
+CREATE OR REPLACE FUNCTION datediff(timestamptz, timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS 'SELECT ($1::date - $2::date)';
+
+CREATE OR REPLACE FUNCTION date_add(timestamptz, interval)
+RETURNS timestamptz LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS 'SELECT $1 + $2';
+
+CREATE OR REPLACE FUNCTION date_sub(timestamptz, interval)
+RETURNS timestamptz LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS 'SELECT $1 - $2';
+
+CREATE OR REPLACE FUNCTION timediff(timestamptz, timestamptz)
+RETURNS interval LANGUAGE sql IMMUTABLE PARALLEL SAFE
+AS 'SELECT $1 - $2';
+
+CREATE OR REPLACE FUNCTION to_days(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT ($1::date - DATE '0001-01-01') + 366 $$;
+
+CREATE OR REPLACE FUNCTION last_day(timestamptz)
+RETURNS date LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT (date_trunc('month', $1) + INTERVAL '1 month - 1 day')::date $$;
+
+CREATE OR REPLACE FUNCTION year(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(year FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION month(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(month FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION day(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(day FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION hour(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(hour FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION minute(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(minute FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION week(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(week FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION quarter(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(quarter FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION monthname(timestamptz)
+RETURNS text LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT to_char($1, 'FMMonth') $$;
+
+CREATE OR REPLACE FUNCTION dayofweek(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(dow FROM $1)::integer + 1 $$;
+
+CREATE OR REPLACE FUNCTION dayofyear(timestamptz)
+RETURNS integer LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT EXTRACT(doy FROM $1)::integer $$;
+
+CREATE OR REPLACE FUNCTION unix_timestamp(timestamptz)
+RETURNS bigint LANGUAGE sql STABLE PARALLEL SAFE
+AS $$ SELECT FLOOR(EXTRACT(epoch FROM $1))::bigint $$;
+
 -- DATE_FORMAT(ts, fmt): translate MySQL format tokens to to_char() templates.
 -- Covers the token set ERPNext uses; unknown %x tokens pass through literally.
 CREATE OR REPLACE FUNCTION date_format(ts timestamp, fmt text)

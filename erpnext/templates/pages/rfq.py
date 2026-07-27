@@ -65,7 +65,7 @@ def get_link_quotation(supplier, rfq):
 		`tabSupplier Quotation Item`, `tabSupplier Quotation` where `tabSupplier Quotation`.docstatus < 2 and
 		`tabSupplier Quotation Item`.request_for_quotation =%(name)s and
 		`tabSupplier Quotation Item`.parent = `tabSupplier Quotation`.name and
-		`tabSupplier Quotation`.supplier = %(supplier)s order by `tabSupplier Quotation`.creation desc""",
+		`tabSupplier Quotation`.supplier = %(supplier)s order by `tabSupplier Quotation`.transaction_date desc""",
 		{"name": rfq, "supplier": supplier},
 		as_dict=1,
 	)

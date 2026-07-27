@@ -89,7 +89,7 @@ class EmailDigest(Document):
 			"""
 			select name, enabled from tabUser
 			where name not in ({})
-			and user_type != "Website User"
+			and user_type != 'Website User'
 			order by enabled desc, name asc""".format(", ".join(["%s"] * len(STANDARD_USERS))),
 			STANDARD_USERS,
 			as_dict=1,
@@ -265,7 +265,7 @@ class EmailDigest(Document):
 
 		issue_list = frappe.db.sql(
 			"""select *
-			from `tabIssue` where status in ("Replied","Open")
+			from `tabIssue` where status in ('Replied','Open')
 			order by creation asc limit 10""",
 			as_dict=True,
 		)
@@ -488,7 +488,7 @@ class EmailDigest(Document):
 		value, count = frappe.db.sql(
 			"""select ifnull((sum(grand_total)) - (sum(grand_total*per_billed/100)),0),
                     count(*) from `tabSales Order`
-					where (transaction_date <= %(to_date)s) and billing_status != "Fully Billed" and company = %(company)s
+					where (transaction_date <= %(to_date)s) and billing_status != 'Fully Billed' and company = %(company)s
 					and status not in ('Closed','Cancelled', 'Completed') """,
 			{"to_date": self.future_to_date, "company": self.company},
 		)[0]
@@ -514,7 +514,7 @@ class EmailDigest(Document):
 		value, count = frappe.db.sql(
 			"""select ifnull((sum(grand_total)) - (sum(grand_total*per_delivered/100)),0),
 					count(*) from `tabSales Order`
-					where (transaction_date <= %(to_date)s) and delivery_status != "Fully Delivered" and company = %(company)s
+					where (transaction_date <= %(to_date)s) and delivery_status != 'Fully Delivered' and company = %(company)s
 					and status not in ('Closed','Cancelled', 'Completed') """,
 			{"to_date": self.future_to_date, "company": self.company},
 		)[0]

@@ -55,8 +55,14 @@ def get_level(site_info):
 	sales_data.append({"Communication": communication_number})
 
 	# recent login
-	# pg-port: interval '2' day parses on both engines (bare 2 is MySQL-only)
-	if frappe.db.sql("select name from tabUser where last_login > date_sub(now(), interval '2' day) limit 1"):
+	# pg-port: last_login is a varchar column — PG will not coerce it against a
+	# timestamp, so compare ISO strings lexicographically there (equivalent)
+	recent_login_cond = (
+		"last_login > cast(date_sub(now(), interval '2' day) as text)"
+		if frappe.db.db_type == "postgres"
+		else "last_login > date_sub(now(), interval 2 day)"
+	)
+	if frappe.db.sql(f"select name from tabUser where {recent_login_cond} limit 1"):
 		activation_level += 1
 
 	level = {"activation_level": activation_level, "sales_data": sales_data}

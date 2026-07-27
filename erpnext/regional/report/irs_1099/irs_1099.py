@@ -130,11 +130,11 @@ def get_payer_address_html(company):
 		SELECT
 			name
 		FROM
-			tabAddress
+			`tabAddress`
 		WHERE
 			is_your_company_address = 1
 		ORDER BY
-			address_type="Postal" DESC, address_type="Billing" DESC
+			address_type='Postal' DESC, address_type='Billing' DESC
 		LIMIT 1
 	""",
 		{"company": company},
@@ -158,11 +158,11 @@ def get_street_address_html(party_type, party):
 			`tabDynamic Link` link,
 			`tabAddress` address
 		WHERE
-			link.parenttype = "Address"
+			link.parenttype = 'Address'
 				AND link.link_name = %(party)s
 		ORDER BY
-			address.address_type="Postal" DESC,
-			address.address_type="Billing" DESC
+			address.address_type='Postal' DESC,
+			address.address_type='Billing' DESC
 		LIMIT 1
 	""",
 		{"party": party},

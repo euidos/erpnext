@@ -2496,13 +2496,16 @@ def get_bom_operations(doctype, txt, searchfield, start, page_len, filters):
 
 @frappe.whitelist()
 def get_item_details(item, project=None, skip_bom_info=False, throw=True):
+	# pg-port: zero dates are unrepresentable (and unparseable) on PG; keep the
+	# legacy zero-date arm for MariaDB data
+	eol_zero = "" if frappe.db.db_type == "postgres" else "or end_of_life='0000-00-00'"
 	res = frappe.db.sql(
-		"""
+		f"""
 		select stock_uom, description, item_name, allow_alternative_item,
 			include_item_in_manufacturing
 		from `tabItem`
 		where disabled=0
-			and (end_of_life is null or end_of_life='0000-00-00' or end_of_life > %s)
+			and (end_of_life is null {eol_zero} or end_of_life > %s)
 			and name=%s
 	""",
 		(nowdate(), item),

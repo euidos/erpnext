@@ -214,7 +214,7 @@ def get_reverse_charge_tax(filters):
 		on
 			gl.voucher_no =  p.name
 		where
-			p.reverse_charge = "Y"
+			p.reverse_charge = 'Y'
 			and p.docstatus = 1
 			and gl.docstatus = 1
 			and account in (select account from `tabUAE VAT Account` where  parent=%(company)s)
@@ -260,7 +260,7 @@ def get_reverse_charge_recoverable_tax(filters):
 		on
 			gl.voucher_no = p.name
 		where
-			p.reverse_charge = "Y"
+			p.reverse_charge = 'Y'
 			and p.docstatus = 1
 			and p.recoverable_reverse_charge > 0
 			and gl.docstatus = 1

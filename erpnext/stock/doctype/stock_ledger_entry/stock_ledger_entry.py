@@ -312,9 +312,15 @@ class StockLedgerEntry(Document):
 		if authorized_role:
 			authorized_users = get_users(authorized_role)
 			if authorized_users and frappe.session.user not in authorized_users:
+				# pg-port: TIMESTAMP(date, time) is MySQL-only; PG composes with date + time
+				ts_expr = (
+					"(posting_date + posting_time)"
+					if frappe.db.db_type == "postgres"
+					else "timestamp(posting_date, posting_time)"
+				)
 				last_transaction_time = frappe.db.sql(
-					"""
-					select MAX(timestamp(posting_date, posting_time)) as posting_time
+					f"""
+					select MAX({ts_expr}) as posting_time
 					from `tabStock Ledger Entry`
 					where docstatus = 1 and is_cancelled = 0 and item_code = %s
 					and warehouse = %s""",

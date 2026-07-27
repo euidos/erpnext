@@ -53,8 +53,8 @@ def get_data():
 		"""
 		SELECT
 			so_item.item_code,
-			so_item.item_name,
-			so_item.description,
+			max(so_item.item_name) as item_name,
+			max(so_item.description) as description,
 			so.name,
 			so.transaction_date,
 			so.customer,

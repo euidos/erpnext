@@ -592,8 +592,8 @@ def get_item_from_material_requests_based_on_supplier(source_name, target_doc=No
 			AND item.name = item_supp.parent
 			AND mr_item.parent = mr.name
 			AND mr_item.item_code = item.name
-			AND mr.status != "Stopped"
-			AND mr.material_request_type = "Purchase"
+			AND mr.status != 'Stopped'
+			AND mr.material_request_type = 'Purchase'
 			AND mr.docstatus = 1
 			AND mr.per_ordered < 99.99""",
 		{"supplier": source_name},
