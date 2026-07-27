@@ -3390,11 +3390,12 @@ class StockEntry(StockController, SubcontractingInwardController):
 			.select(
 				Sum(job_card_secondary_item.stock_qty).as_("stock_qty"),
 				job_card_secondary_item.item_code,
-				job_card_secondary_item.item_name,
-				job_card_secondary_item.description,
-				job_card_secondary_item.stock_uom,
+				# pg-port: ANSI grouping — these are 1:1 per (item_code, type)
+				Max(job_card_secondary_item.item_name).as_("item_name"),
+				Max(job_card_secondary_item.description).as_("description"),
+				Max(job_card_secondary_item.stock_uom).as_("stock_uom"),
 				job_card_secondary_item.type,
-				job_card_secondary_item.bom_secondary_item,
+				Max(job_card_secondary_item.bom_secondary_item).as_("bom_secondary_item"),
 			)
 			.join(job_card_secondary_item)
 			.on(job_card_secondary_item.parent == job_card.name)
@@ -3404,7 +3405,7 @@ class StockEntry(StockController, SubcontractingInwardController):
 				& (job_card.docstatus == 1)
 			)
 			.groupby(job_card_secondary_item.item_code, job_card_secondary_item.type)
-			.orderby(job_card_secondary_item.idx)
+			.orderby(Min(job_card_secondary_item.idx))
 		)
 
 		if self.job_card:
@@ -3909,15 +3910,18 @@ class StockEntry(StockController, SubcontractingInwardController):
 					continue
 
 				stock_entries_child_list.append(d.ste_detail)
-				transferred_qty = frappe.get_all(
-					"Stock Entry Detail",
-					fields=[{"SUM": "transfer_qty", "as": "qty"}],
-					filters={
-						"against_stock_entry": d.against_stock_entry,
-						"ste_detail": d.ste_detail,
-						"docstatus": 1,
-					},
-				)
+				# pg-port: get_all with an aggregate injects a default ORDER
+				# BY creation, which violates PG grouping rules
+				sed_t = frappe.qb.DocType("Stock Entry Detail")
+				transferred_qty = (
+					frappe.qb.from_(sed_t)
+					.select(Sum(sed_t.transfer_qty).as_("qty"))
+					.where(
+						(sed_t.against_stock_entry == d.against_stock_entry)
+						& (sed_t.ste_detail == d.ste_detail)
+						& (sed_t.docstatus == 1)
+					)
+				).run(as_dict=True)
 
 				if d.docstatus == 1:
 					transfer_qty = frappe.get_value("Stock Entry Detail", d.ste_detail, "transfer_qty")

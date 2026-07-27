@@ -3568,13 +3568,13 @@ def update_invoice_status():
 
 		total = (
 			frappe.qb.terms.Case()
-			.when(invoice.disable_rounded_total, invoice.grand_total)
+			.when(invoice.disable_rounded_total == 1, invoice.grand_total)  # pg-port: smallint is not boolean
 			.else_(invoice.rounded_total)
 		)
 
 		base_total = (
 			frappe.qb.terms.Case()
-			.when(invoice.disable_rounded_total, invoice.base_grand_total)
+			.when(invoice.disable_rounded_total == 1, invoice.base_grand_total)  # pg-port: smallint is not boolean
 			.else_(invoice.base_rounded_total)
 		)
 

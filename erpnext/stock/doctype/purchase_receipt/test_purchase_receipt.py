@@ -2396,15 +2396,17 @@ class TestPurchaseReceipt(ERPNextTestSuite):
 			},
 			fieldname=["credit"],
 		)
-		stock_diff = frappe.db.get_value(
-			"Stock Ledger Entry",
-			{
-				"voucher_type": "Purchase Receipt",
-				"voucher_no": pr.name,
-				"is_cancelled": 0,
-			},
-			fieldname=[{"SUM": "stock_value_difference"}],
-		)
+		# pg-port: get_value with an aggregate injects ORDER BY creation
+		sle_t = frappe.qb.DocType("Stock Ledger Entry")
+		stock_diff = (
+			frappe.qb.from_(sle_t)
+			.select(frappe.query_builder.functions.Sum(sle_t.stock_value_difference))
+			.where(
+				(sle_t.voucher_type == "Purchase Receipt")
+				& (sle_t.voucher_no == pr.name)
+				& (sle_t.is_cancelled == 0)
+			)
+		).run()[0][0]
 
 		# Value of Stock Account should be equal to the sum of Stock Value Difference
 		self.assertEqual(stock_account_value, stock_diff)
@@ -2504,11 +2506,13 @@ class TestPurchaseReceipt(ERPNextTestSuite):
 		pr_return.save()
 		pr_return.submit()
 
-		data = frappe.get_all(
-			"Stock Ledger Entry",
-			filters={"voucher_no": pr_return.name, "docstatus": 1},
-			fields=[{"SUM": "stock_value_difference", "as": "stock_value_difference"}],
-		)[0]
+		# pg-port: get_all with an aggregate injects ORDER BY creation
+		sle_t = frappe.qb.DocType("Stock Ledger Entry")
+		data = (
+			frappe.qb.from_(sle_t)
+			.select(frappe.query_builder.functions.Sum(sle_t.stock_value_difference).as_("stock_value_difference"))
+			.where((sle_t.voucher_no == pr_return.name) & (sle_t.docstatus == 1))
+		).run(as_dict=True)[0]
 
 		self.assertEqual(abs(data["stock_value_difference"]), 400.00)
 

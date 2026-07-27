@@ -750,7 +750,7 @@ def make_reverse_gl_entries(
 				)
 
 				if not immutable_ledger_enabled:
-					query = query.set(gle.is_cancelled, True)
+					query = query.set(gle.is_cancelled, 1)  # pg-port: smallint column; booleans don't coerce on PG
 
 				query.run()
 		else:

@@ -50,6 +50,22 @@ Three layers, smallest-diff-first:
      (`{"MAX": ...}`) → explicit query-builder queries (frappe injects a
      default `ORDER BY creation` that violates PG grouping rules).
 
+## Deployment requirement: ICU collation
+
+Initialize the PostgreSQL cluster (or at least the site database) with the
+ICU root collation, e.g. in docker:
+
+```yaml
+environment:
+  POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu --locale=C.UTF-8"
+```
+
+glibc locales ignore punctuation on the first collation pass, so `ORDER BY`
+over names sorts `_Test ...` after `Advances ...` — the opposite of MariaDB.
+ICU `und` treats punctuation as non-ignorable and matches MariaDB's ordering,
+which order-sensitive ERPNext code (GL comparison, float summation order,
+list views) and the test suite expect.
+
 ## Deviations from MySQL behaviour (accepted)
 
 - `week()` uses ISO week numbering (MySQL mode 0 differs by ±1 at year
@@ -82,8 +98,20 @@ Three layers, smallest-diff-first:
 - Link-field search queries (item/lead/warehouse/employee/project-users).
 - Static sweep: all 459 raw `frappe.db.sql` strings EXPLAINed against a live
   PG site; remaining flags are substitution artifacts or engine-gated code.
-- erpnext test suite: see fleet-infra board `spec-erpnext-pg` for the
-  current module-by-module status.
+- erpnext test suite on the ICU cluster (2026-07-27): `sales_order` 85/85,
+  `sales_invoice` 131/131, `purchase_receipt` 107/107, `stock_entry` 77/77,
+  `payment_entry` 54/54, `work_order` 85/86.
+
+## Known issues
+
+- `test_valuation_rate_missing_on_make_stock_entry` (work_order) fails only
+  inside a full-module run: an earlier test leaks state that lets the stock
+  entry find a valuation rate. Standalone repro of the same scenario on a
+  clean site raises the expected ValidationError on PG — the guarded logic
+  itself is correct. Not investigated further.
+- Payment reconciliation with `limit` filters and regional flows (UAE VAT /
+  IRS 1099 with their custom fields installed) are syntax-fixed but not
+  functionally exercised.
 
 ## Rebasing on upstream
 

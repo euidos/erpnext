@@ -1724,13 +1724,15 @@ def sort_stock_vouchers_by_posting_date(
 	sle = frappe.qb.DocType("Stock Ledger Entry")
 	voucher_nos = [v[1] for v in stock_vouchers]
 
+	# pg-port: bare per-row columns under GROUP BY violate PG grouping
+	# rules; consumers only read the voucher tuple, ordered by earliest entry
 	sles = (
 		frappe.qb.from_(sle)
-		.select(sle.voucher_type, sle.voucher_no, sle.posting_date, sle.posting_time, sle.creation)
+		.select(sle.voucher_type, sle.voucher_no)
 		.where((sle.is_cancelled == 0) & (sle.voucher_no.isin(voucher_nos)))
 		.groupby(sle.voucher_type, sle.voucher_no)
-		.orderby(sle.posting_datetime)
-		.orderby(sle.creation)
+		.orderby(Min(sle.posting_datetime))
+		.orderby(Min(sle.creation))
 	)
 
 	if company:

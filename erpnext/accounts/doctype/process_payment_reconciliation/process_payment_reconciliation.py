@@ -431,7 +431,7 @@ def reconcile(doc: None | str = None) -> None:
 					# Update reconciled flag
 					allocation_names = [x.name for x in allocations]
 					ppa = qb.DocType("Process Payment Reconciliation Log Allocations")
-					qb.update(ppa).set(ppa.reconciled, True).where(ppa.name.isin(allocation_names)).run()
+					qb.update(ppa).set(ppa.reconciled, 1).where(ppa.name.isin(allocation_names)).run()  # pg-port: smallint
 
 					# Update reconciled count
 					reconciled_count = frappe.db.count(
@@ -477,7 +477,7 @@ def reconcile(doc: None | str = None) -> None:
 				finally:
 					if reconciled_entries == total_allocations:
 						frappe.db.set_value("Process Payment Reconciliation Log", log, "status", "Reconciled")
-						frappe.db.set_value("Process Payment Reconciliation Log", log, "reconciled", True)
+						frappe.db.set_value("Process Payment Reconciliation Log", log, "reconciled", 1)  # pg-port: smallint
 						frappe.db.set_value("Process Payment Reconciliation", doc, "status", "Completed")
 					else:
 						if frappe.db.get_value("Process Payment Reconciliation", doc, "status") != "Paused":
@@ -501,7 +501,7 @@ def reconcile(doc: None | str = None) -> None:
 								)
 			else:
 				frappe.db.set_value("Process Payment Reconciliation Log", log, "status", "Reconciled")
-				frappe.db.set_value("Process Payment Reconciliation Log", log, "reconciled", True)
+				frappe.db.set_value("Process Payment Reconciliation Log", log, "reconciled", 1)  # pg-port: smallint
 				frappe.db.set_value("Process Payment Reconciliation", doc, "status", "Completed")
 
 

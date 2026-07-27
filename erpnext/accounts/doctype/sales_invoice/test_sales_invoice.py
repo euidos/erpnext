@@ -4084,12 +4084,16 @@ class TestSalesInvoice(ERPNextTestSuite):
 		self.assertEqual(len(journals), 1)
 		je_type = frappe.get_cached_value("Journal Entry", journals[0], "voucher_type")
 		self.assertEqual(je_type, "Exchange Gain Or Loss")
-		frappe.db.get_all(
-			"Payment Ledger Entry",
-			filters={"against_voucher_no": si.name, "delinked": 0},
-			fields=[{"SUM": "amount"}, {"SUM": "amount_in_account_currency"}],
-			as_list=1,
-		)
+		# pg-port: get_all with aggregates injects ORDER BY creation
+		ple_t = frappe.qb.DocType("Payment Ledger Entry")
+		(
+			frappe.qb.from_(ple_t)
+			.select(
+				frappe.query_builder.functions.Sum(ple_t.amount),
+				frappe.query_builder.functions.Sum(ple_t.amount_in_account_currency),
+			)
+			.where((ple_t.against_voucher_no == si.name) & (ple_t.delinked == 0))
+		).run()
 
 	def test_batch_expiry_for_sales_invoice_return(self):
 		from erpnext.controllers.sales_and_purchase_return import make_return_doc
