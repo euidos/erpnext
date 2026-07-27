@@ -3,6 +3,7 @@
 
 
 import os
+from pathlib import Path
 
 import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
@@ -15,6 +16,27 @@ from .default_success_action import get_default_success_action
 
 default_mail_footer = """<div style="padding: 7px; text-align: right; color: #888"><small>Sent via
 	<a style="color: #888" href="http://frappe.io/erpnext">ERPNext</a></div>"""
+
+
+def before_install():
+	setup_pg_compat()
+
+
+def setup_pg_compat():
+	"""Install the MariaDB-compat SQL layer (pg_compat.sql) on PostgreSQL sites; no-op on MariaDB.
+
+	Runs on before_install and after_migrate so fresh, restored and upgraded
+	sites all carry the functions. Idempotent (CREATE OR REPLACE throughout).
+	"""
+	if frappe.db.db_type != "postgres":
+		return
+	sql = (Path(__file__).parent / "pg_compat.sql").read_text()
+	if not frappe.db._conn:  # same lazy-connect guard frappe.db.sql() uses
+		frappe.db.connect()
+	# raw cursor on purpose: frappe.db.sql()'s postgres query rewriting
+	# (int-quoting, locate()->strpos) must not touch function bodies
+	frappe.db._cursor.execute(sql)
+	frappe.db.commit()
 
 
 def after_install():

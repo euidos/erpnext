@@ -9,7 +9,7 @@ import frappe
 from frappe import _, bold
 from frappe.model.mapper import map_child_doc
 from frappe.query_builder import Case
-from frappe.query_builder.custom import GROUP_CONCAT
+from frappe.query_builder.custom import GROUP_CONCAT, STRING_AGG
 from frappe.query_builder.functions import Coalesce, Locate, Replace, Sum
 from frappe.utils import ceil, cint, floor, flt, get_link_to_form
 from frappe.utils.nestedset import get_descendants_of
@@ -1865,7 +1865,14 @@ def get_pick_list_query(doctype, txt, searchfield, start, page_len, filters):
 		.select(
 			PICK_LIST.name,
 			SALES_ORDER.customer,
-			Replace(GROUP_CONCAT(PICK_LIST_ITEM.sales_order).distinct(), ",", "<br>").as_("sales_order"),
+			# pg-port: GROUP_CONCAT renders MySQL-only syntax
+			Replace(
+				STRING_AGG(PICK_LIST_ITEM.sales_order).distinct()
+				if frappe.db.db_type == "postgres"
+				else GROUP_CONCAT(PICK_LIST_ITEM.sales_order).distinct(),
+				",",
+				"<br>",
+			).as_("sales_order"),
 		)
 		.where(PICK_LIST.docstatus == 1)
 		.where(PICK_LIST.status.isin(["Open", "Partly Delivered"]))

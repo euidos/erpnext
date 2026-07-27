@@ -247,7 +247,9 @@ def get_opening_balance(
 			Sum(closing_balance.credit_in_account_currency).as_("credit_in_account_currency"),
 		)
 		.where((closing_balance.company == filters.company) & (closing_balance.account.isin(accounts)))
-		.groupby(closing_balance.account)
+		# pg-port: account_currency is selected bare, so PG requires it grouped
+		# (1:1 with account, so the result set is unchanged)
+		.groupby(closing_balance.account, closing_balance.account_currency)
 	)
 
 	if not ignore_reporting_currency:

@@ -871,7 +871,9 @@ def get_sre_reserved_warehouses_for_voucher(
 			& (sre.voucher_no == voucher_no)
 			& (sre.delivered_qty < sre.reserved_qty)
 		)
-		.orderby(sre.creation)
+		# pg-port: DISTINCT + ORDER BY needs the sort key in the select list;
+		# callers only need the warehouse set, so sort by warehouse itself
+		.orderby(sre.warehouse)
 	)
 
 	if voucher_detail_no:

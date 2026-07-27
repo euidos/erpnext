@@ -13,7 +13,7 @@ from frappe.desk.reportview import build_match_conditions
 from frappe.model.meta import get_field_precision
 from frappe.model.naming import determine_consecutive_week_number
 from frappe.query_builder import AliasedQuery, Case, Criterion, Field, Table
-from frappe.query_builder.functions import Count, IfNull, Max, Round, Sum
+from frappe.query_builder.functions import Count, IfNull, Max, Min, Round, Sum
 from frappe.query_builder.utils import DocType
 from frappe.utils import (
 	add_days,
@@ -2346,18 +2346,21 @@ class QueryPaymentLedger:
 		query_voucher_amount = (
 			qb.from_(ple)
 			.select(
-				ple.account,
+				# pg-port: ungrouped columns are aggregate-wrapped for ANSI
+				# grouping (MySQL picked an arbitrary row; Min/Max of the
+				# functionally-dependent values is identical and portable)
+				Max(ple.account).as_("account"),
 				ple.voucher_type,
 				ple.voucher_no,
 				ple.party_type,
 				ple.party,
-				ple.posting_date,
-				ple.due_date,
-				ple.account_currency.as_("currency"),
-				ple.cost_center.as_("cost_center"),
+				Min(ple.posting_date).as_("posting_date"),
+				Min(ple.due_date).as_("due_date"),
+				Max(ple.account_currency).as_("currency"),
+				Max(ple.cost_center).as_("cost_center"),
 				Sum(ple.amount).as_("amount"),
 				Sum(ple.amount_in_account_currency).as_("amount_in_account_currency"),
-				ple.remarks,
+				Max(ple.remarks).as_("remarks"),
 			)
 			.where(ple.delinked == 0)
 			.where(Criterion.all(filter_on_voucher_no))
@@ -2371,14 +2374,15 @@ class QueryPaymentLedger:
 		query_voucher_outstanding = (
 			qb.from_(ple)
 			.select(
-				ple.account,
+				# pg-port: same ANSI-grouping treatment as query_voucher_amount
+				Max(ple.account).as_("account"),
 				ple.against_voucher_type.as_("voucher_type"),
 				ple.against_voucher_no.as_("voucher_no"),
 				ple.party_type,
 				ple.party,
-				ple.posting_date,
-				ple.due_date,
-				ple.account_currency.as_("currency"),
+				Min(ple.posting_date).as_("posting_date"),
+				Min(ple.due_date).as_("due_date"),
+				Max(ple.account_currency).as_("currency"),
 				Sum(ple.amount).as_("amount"),
 				Sum(ple.amount_in_account_currency).as_("amount_in_account_currency"),
 			)
@@ -2426,18 +2430,21 @@ class QueryPaymentLedger:
 		)
 
 		# build CTE filter
+		# pg-port: HAVING on a select alias is MySQL-only; the outer query has
+		# no GROUP BY, so filter with WHERE on the underlying column instead
+		# (valid on both engines)
 		# only fetch invoices
 		if self.get_invoices:
 			self.cte_query_voucher_amount_and_outstanding = (
-				self.cte_query_voucher_amount_and_outstanding.having(
-					qb.Field("outstanding_in_account_currency") > 0
+				self.cte_query_voucher_amount_and_outstanding.where(
+					Table("outstanding").amount_in_account_currency > 0
 				)
 			)
 		# only fetch payments
 		elif self.get_payments:
 			self.cte_query_voucher_amount_and_outstanding = (
-				self.cte_query_voucher_amount_and_outstanding.having(
-					qb.Field("outstanding_in_account_currency") < 0
+				self.cte_query_voucher_amount_and_outstanding.where(
+					Table("outstanding").amount_in_account_currency < 0
 				)
 			)
 

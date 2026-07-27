@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import frappe
 from frappe import _, bold
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Max, Sum
 from frappe.utils import cint, cstr, flt, get_link_to_form, getdate
 
 import erpnext
@@ -1103,7 +1103,9 @@ class StockController(AccountsController):
 			lcv_item = frappe.qb.DocType("Landed Cost Item")
 			query = (
 				frappe.qb.from_(lcv_item)
-				.select(Sum(lcv_item.applicable_charges), lcv_item.cost_center)
+				# pg-port: bare cost_center with an aggregate violates PG's
+				# GROUP BY rules (MySQL returned an arbitrary row's value)
+				.select(Sum(lcv_item.applicable_charges), Max(lcv_item.cost_center))
 				.where((lcv_item.docstatus == 1) & (lcv_item.receipt_document == self.name))
 			)
 

@@ -63,6 +63,10 @@ welcome_email = "erpnext.setup.utils.welcome_email"
 setup_wizard_requires = "assets/erpnext/js/setup_wizard.js"
 setup_wizard_stages = "erpnext.setup.setup_wizard.setup_wizard.get_setup_stages"
 
+# pg-port: MariaDB-compat SQL functions must exist before schema sync /
+# fixtures touch the DB, and must survive restores and upgrades
+before_install = "erpnext.setup.install.before_install"
+after_migrate = ["erpnext.setup.install.setup_pg_compat"]
 after_install = "erpnext.setup.install.after_install"
 
 after_app_install = "erpnext.setup.install.after_app_install"

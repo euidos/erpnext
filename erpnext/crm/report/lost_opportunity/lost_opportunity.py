@@ -5,7 +5,7 @@
 import frappe
 from frappe import _
 from frappe.query_builder import DocType
-from frappe.query_builder.custom import GROUP_CONCAT
+from frappe.query_builder.custom import GROUP_CONCAT, STRING_AGG
 from frappe.query_builder.functions import Date
 
 Opportunity = DocType("Opportunity")
@@ -85,7 +85,10 @@ def get_data(filters):
 			Opportunity.party_name,
 			Opportunity.customer_name,
 			Opportunity.opportunity_type,
-			GROUP_CONCAT(OpportunityLostReasonDetail.lost_reason, alias="lost_reason").separator(", "),
+			# pg-port: GROUP_CONCAT renders MySQL-only SEPARATOR syntax
+			STRING_AGG(OpportunityLostReasonDetail.lost_reason, ", ", alias="lost_reason")
+			if frappe.db.db_type == "postgres"
+			else GROUP_CONCAT(OpportunityLostReasonDetail.lost_reason, alias="lost_reason").separator(", "),
 			Opportunity.sales_stage,
 			Opportunity.territory,
 		)

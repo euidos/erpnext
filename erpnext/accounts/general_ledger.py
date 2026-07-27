@@ -841,9 +841,14 @@ def validate_against_pcv(is_opening, posting_date, company):
 	if is_opening:
 		validate_opening_entry_against_pcv(company)
 
-	last_pcv_date = frappe.db.get_value(
-		"Period Closing Voucher", {"docstatus": 1, "company": company}, [{"MAX": "period_end_date"}]
-	)
+	# pg-port: get_value with an aggregate injects a default ORDER BY creation,
+	# which violates PG grouping rules — build the max() query explicitly
+	pcv = frappe.qb.DocType("Period Closing Voucher")
+	last_pcv_date = (
+		frappe.qb.from_(pcv)
+		.select(frappe.query_builder.functions.Max(pcv.period_end_date))
+		.where((pcv.docstatus == 1) & (pcv.company == company))
+	).run()[0][0]
 
 	if last_pcv_date and getdate(posting_date) <= getdate(last_pcv_date):
 		message = _("Books have been closed till the period ending on {0}").format(formatdate(last_pcv_date))

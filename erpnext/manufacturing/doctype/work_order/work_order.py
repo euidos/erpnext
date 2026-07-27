@@ -1547,9 +1547,10 @@ class WorkOrder(Document):
 			if actual_end_dates:
 				self.actual_end_date = max(actual_end_dates)
 		else:
+			# pg-port: TIMESTAMP(date, time) is MySQL-only — combine in python
 			data = frappe.get_all(
 				"Stock Entry",
-				fields=[{"TIMESTAMP": ["posting_date", "posting_time"], "as": "posting_datetime"}],
+				fields=["posting_date", "posting_time"],
 				filters={
 					"work_order": self.name,
 					"purpose": ("in", ["Material Transfer for Manufacture", "Manufacture"]),
@@ -1557,7 +1558,7 @@ class WorkOrder(Document):
 			)
 
 			if data and len(data):
-				dates = [d.posting_datetime for d in data]
+				dates = [get_datetime(f"{d.posting_date} {d.posting_time}") for d in data]
 				self.db_set("actual_start_date", min(dates))
 
 				if self.status == "Completed":
@@ -1789,7 +1790,9 @@ class WorkOrder(Document):
 			.on(ste_child.parent == ste.name)
 			.select(
 				ste_child.item_code,
-				ste_child.original_item,
+				# pg-port: original_item is ungrouped; Max preserves the
+				# one-substitution-per-item semantics MySQL picked arbitrarily
+				fn.Max(ste_child.original_item).as_("original_item"),
 				fn.Sum(ste_child.transfer_qty).as_("qty"),
 			)
 			.where(

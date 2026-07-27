@@ -1385,29 +1385,32 @@ def get_bom_items_as_dict(
 ):
 	item_dict = {}
 
-	group_by_cond = "group by item_code, stock_uom, operation"
+	# pg-port: group-by columns are table-qualified (both joined tables carry
+	# item_code/stock_uom) and every ungrouped select is aggregate-wrapped
+	# below — ANSI grouping, identical results on MariaDB and Postgres
+	group_by_cond = "group by bom_item.item_code, bom_item.stock_uom, bom_item.operation"
 	if frappe.get_cached_value("BOM", bom, "track_semi_finished_goods"):
 		fetch_exploded = 0
-		group_by_cond = "group by item_code, operation_row_id, stock_uom"
+		group_by_cond = "group by bom_item.item_code, bom_item.operation_row_id, bom_item.stock_uom"
 
 	if fetch_secondary_items:
 		fetch_exploded = 0
-		group_by_cond = "group by item_code"
+		group_by_cond = "group by bom_item.item_code"
 
 	# Did not use qty_consumed_per_unit in the query, as it leads to rounding loss
 	query = """select
 				bom_item.item_code,
-				bom_item.idx,
-				item.item_name,
+				{idx_column} as idx,
+				max(item.item_name) as item_name,
 				sum(bom_item.{qty_field}/ifnull(bom.quantity, 1)) * %(qty)s as qty,
-				item.image,
-				bom.project,
-				item.stock_uom,
-				item.item_group,
-				item.allow_alternative_item,
-				item_default.default_warehouse,
-				item_default.expense_account as expense_account,
-				item_default.buying_cost_center as cost_center
+				max(item.image) as image,
+				max(bom.project) as project,
+				max(item.stock_uom) as stock_uom,
+				max(item.item_group) as item_group,
+				max(item.allow_alternative_item) as allow_alternative_item,
+				max(item_default.default_warehouse) as default_warehouse,
+				max(item_default.expense_account) as expense_account,
+				max(item_default.buying_cost_center) as cost_center
 				{select_columns}
 			from
 				`tab{table}` bom_item
@@ -1431,10 +1434,13 @@ def get_bom_items_as_dict(
 			is_stock_item=is_stock_item,
 			qty_field="stock_qty",
 			group_by_cond=group_by_cond,
-			select_columns=""", bom_item.source_warehouse, bom_item.operation,
-				bom_item.include_item_in_manufacturing, bom_item.description, bom_item.rate, bom_item.sourced_by_supplier,
-				sum(bom_item.stock_qty/ifnull(bom.quantity, 1)) * bom_item.rate * %(qty)s as amount,
-				(Select idx from `tabBOM Item` where item_code = bom_item.item_code and parent = %(parent)s limit 1) as idx""",
+			idx_column="""(Select min(idx) from `tabBOM Item`
+				where item_code = bom_item.item_code and parent = %(parent)s)""",
+			select_columns=""", max(bom_item.source_warehouse) as source_warehouse, max(bom_item.operation) as operation,
+				max(bom_item.include_item_in_manufacturing) as include_item_in_manufacturing,
+				max(bom_item.description) as description, max(bom_item.rate) as rate,
+				max(bom_item.sourced_by_supplier) as sourced_by_supplier,
+				sum(bom_item.stock_qty * bom_item.rate / ifnull(bom.quantity, 1)) * %(qty)s as amount""",
 		)
 
 		items = frappe.db.sql(
@@ -1444,7 +1450,10 @@ def get_bom_items_as_dict(
 		query = query.format(
 			table="BOM Secondary Item",
 			where_conditions=")",
-			select_columns=", item.description, bom_item.cost_allocation_per, bom_item.process_loss_per, bom_item.type, bom_item.name, bom_item.is_legacy",
+			idx_column="min(bom_item.idx)",
+			select_columns=""", max(item.description) as description, max(bom_item.cost_allocation_per) as cost_allocation_per,
+				max(bom_item.process_loss_per) as process_loss_per, max(bom_item.type) as type,
+				max(bom_item.name) as name, max(bom_item.is_legacy) as is_legacy""",
 			is_stock_item=is_stock_item,
 			qty_field="stock_qty",
 			group_by_cond=group_by_cond,
@@ -1457,10 +1466,16 @@ def get_bom_items_as_dict(
 			where_conditions="or bom_item.is_phantom_item)",
 			is_stock_item=is_stock_item,
 			qty_field="stock_qty" if fetch_qty_in_stock_uom else "qty",
-			select_columns=""", bom_item.rate, bom_item.uom, bom_item.conversion_factor, bom_item.source_warehouse,
-				bom_item.operation, bom_item.include_item_in_manufacturing, bom_item.sourced_by_supplier,
-				sum(bom_item.stock_qty/ifnull(bom.quantity, 1)) * bom_item.rate * %(qty)s as amount,
-				bom_item.description, bom_item.base_rate as rate, bom_item.operation_row_id, bom_item.is_phantom_item , bom_item.bom_no """,
+			idx_column="min(bom_item.idx)",
+			select_columns=""", max(bom_item.uom) as uom, max(bom_item.conversion_factor) as conversion_factor,
+				max(bom_item.source_warehouse) as source_warehouse,
+				max(bom_item.operation) as operation,
+				max(bom_item.include_item_in_manufacturing) as include_item_in_manufacturing,
+				max(bom_item.sourced_by_supplier) as sourced_by_supplier,
+				sum(bom_item.stock_qty * bom_item.rate / ifnull(bom.quantity, 1)) * %(qty)s as amount,
+				max(bom_item.description) as description, max(bom_item.base_rate) as rate,
+				max(bom_item.operation_row_id) as operation_row_id,
+				max(bom_item.is_phantom_item) as is_phantom_item, max(bom_item.bom_no) as bom_no """,
 			group_by_cond=group_by_cond,
 		)
 		items = frappe.db.sql(query, {"qty": qty, "bom": bom, "company": company}, as_dict=True)

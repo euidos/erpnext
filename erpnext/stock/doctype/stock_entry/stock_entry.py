@@ -3127,11 +3127,14 @@ class StockEntry(StockController, SubcontractingInwardController):
 
 		precision = self.precision("process_loss_qty")
 		if self.work_order:
-			data = frappe.get_all(
-				"Work Order Operation",
-				filters={"parent": self.work_order},
-				fields=[{"MAX": "process_loss_qty", "as": "process_loss_qty"}],
-			)
+			# pg-port: get_all with an aggregate field injects a default ORDER
+			# BY creation, which violates PG grouping rules — query explicitly
+			wo_op = frappe.qb.DocType("Work Order Operation")
+			data = (
+				frappe.qb.from_(wo_op)
+				.select(frappe.query_builder.functions.Max(wo_op.process_loss_qty).as_("process_loss_qty"))
+				.where(wo_op.parent == self.work_order)
+			).run(as_dict=True)
 
 			if data and data[0].process_loss_qty:
 				process_loss_qty = data[0].process_loss_qty
