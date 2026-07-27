@@ -3,6 +3,7 @@ import json
 from collections import defaultdict
 
 import frappe
+from frappe.query_builder import Criterion
 from frappe.query_builder.functions import Sum
 from frappe.utils import flt, nowtime
 from pypika import Order
@@ -134,6 +135,20 @@ class DeprecatedBatchNoValuation:
 					sle.creation < self.sle.creation
 				)
 
+		conditions = [
+			sle.item_code == self.sle.item_code,
+			sle.warehouse == self.sle.warehouse,
+			sle.batch_no.isin(self.batchwise_valuation_batches),
+			sle.batch_no.isnotnull(),
+			sle.is_cancelled == 0,
+		]
+
+		if timestamp_condition:
+			conditions.append(timestamp_condition)
+
+		if self.sle.name:
+			conditions.append(sle.name != self.sle.name)
+
 		query = (
 			frappe.qb.from_(sle)
 			.select(
@@ -141,22 +156,16 @@ class DeprecatedBatchNoValuation:
 				Sum(sle.stock_value_difference).as_("batch_value"),
 				Sum(sle.actual_qty).as_("batch_qty"),
 			)
-			.where(
-				(sle.item_code == self.sle.item_code)
-				& (sle.warehouse == self.sle.warehouse)
-				& (sle.batch_no.isin(self.batchwise_valuation_batches))
-				& (sle.batch_no.isnotnull())
-				& (sle.is_cancelled == 0)
-			)
-			.for_update()
+			.where(Criterion.all(conditions))
 			.groupby(sle.batch_no)
 		)
 
-		if timestamp_condition:
-			query = query.where(timestamp_condition)
-
-		if self.sle.name:
-			query = query.where(sle.name != self.sle.name)
+		# pg-port: PG rejects FOR UPDATE with GROUP BY — take the row locks
+		# with a plain SELECT ... FOR UPDATE, then aggregate lock-free
+		if frappe.db.db_type == "postgres":
+			frappe.qb.from_(sle).select(sle.name).where(Criterion.all(conditions)).for_update().run()
+		else:
+			query = query.for_update()
 
 		return query.run(as_dict=True)
 
@@ -253,6 +262,18 @@ class DeprecatedBatchNoValuation:
 				sle.creation < self.sle.creation
 			)
 
+		conditions = [
+			sle.item_code == self.sle.item_code,
+			sle.warehouse == self.sle.warehouse,
+			sle.batch_no.isnotnull(),
+			sle.is_cancelled == 0,
+			sle.batch_no.isin(self.non_batchwise_valuation_batches),
+			timestamp_condition,
+		]
+
+		if self.sle.name:
+			conditions.append(sle.name != self.sle.name)
+
 		query = (
 			frappe.qb.from_(sle)
 			.inner_join(batch)
@@ -262,20 +283,16 @@ class DeprecatedBatchNoValuation:
 				Sum(sle.actual_qty).as_("batch_qty"),
 				Sum(sle.stock_value_difference).as_("batch_value"),
 			)
-			.where(
-				(sle.item_code == self.sle.item_code)
-				& (sle.warehouse == self.sle.warehouse)
-				& (sle.batch_no.isnotnull())
-				& (sle.is_cancelled == 0)
-				& (sle.batch_no.isin(self.non_batchwise_valuation_batches))
-			)
-			.for_update()
-			.where(timestamp_condition)
+			.where(Criterion.all(conditions))
 			.groupby(sle.batch_no)
 		)
 
-		if self.sle.name:
-			query = query.where(sle.name != self.sle.name)
+		# pg-port: PG rejects FOR UPDATE with GROUP BY — take the row locks
+		# with a plain SELECT ... FOR UPDATE, then aggregate lock-free
+		if frappe.db.db_type == "postgres":
+			frappe.qb.from_(sle).select(sle.name).where(Criterion.all(conditions)).for_update().run()
+		else:
+			query = query.for_update()
 
 		# Moving Average items with no Use Batch wise Valuation but want to use batch wise valuation
 		moving_avg_item_non_batch_value = False
@@ -373,6 +390,21 @@ class DeprecatedBatchNoValuation:
 				bundle.creation < self.sle.creation
 			)
 
+		conditions = [
+			bundle.item_code == self.sle.item_code,
+			bundle.warehouse == self.sle.warehouse,
+			bundle_child.batch_no.isnotnull(),
+			bundle.is_cancelled == 0,
+			bundle.docstatus == 1,
+			bundle.type_of_transaction.isin(["Inward", "Outward"]),
+			bundle_child.batch_no.isin(self.non_batchwise_valuation_batches),
+			timestamp_condition,
+			bundle.voucher_type != "Pick List",
+		]
+
+		if self.sle.serial_and_batch_bundle:
+			conditions.append(bundle.name != self.sle.serial_and_batch_bundle)
+
 		query = (
 			frappe.qb.from_(bundle)
 			.inner_join(bundle_child)
@@ -384,24 +416,23 @@ class DeprecatedBatchNoValuation:
 				Sum(bundle_child.qty).as_("batch_qty"),
 				Sum(bundle_child.stock_value_difference).as_("batch_value"),
 			)
-			.where(
-				(bundle.item_code == self.sle.item_code)
-				& (bundle.warehouse == self.sle.warehouse)
-				& (bundle_child.batch_no.isnotnull())
-				& (bundle.is_cancelled == 0)
-				& (bundle.docstatus == 1)
-				& (bundle.type_of_transaction.isin(["Inward", "Outward"]))
-				& (bundle_child.batch_no.isin(self.non_batchwise_valuation_batches))
-			)
-			.for_update()
-			.where(timestamp_condition)
+			.where(Criterion.all(conditions))
 			.groupby(bundle_child.batch_no)
 		)
 
-		if self.sle.serial_and_batch_bundle:
-			query = query.where(bundle.name != self.sle.serial_and_batch_bundle)
-
-		query = query.where(bundle.voucher_type != "Pick List")
+		# pg-port: PG rejects FOR UPDATE with GROUP BY — take the row locks
+		# with a plain SELECT ... FOR UPDATE, then aggregate lock-free
+		if frappe.db.db_type == "postgres":
+			(
+				frappe.qb.from_(bundle)
+				.inner_join(bundle_child)
+				.on(bundle.name == bundle_child.parent)
+				.select(bundle_child.name)
+				.where(Criterion.all(conditions))
+				.for_update()
+			).run()
+		else:
+			query = query.for_update()
 
 		# Moving Average items with no Use Batch wise Valuation but want to use batch wise valuation
 		moving_avg_item_non_batch_value = False

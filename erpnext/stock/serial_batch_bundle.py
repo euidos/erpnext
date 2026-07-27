@@ -864,9 +864,26 @@ class BatchNoValuation(DeprecatedBatchNoValuation):
 				& (child.docstatus == 1)
 				& (child.type_of_transaction.isin(["Inward", "Outward"]))
 			)
-			.for_update()
 			.groupby(child.batch_no)
 		)
+
+		# pg-port: PG rejects FOR UPDATE with GROUP BY — take the row locks
+		# with a plain SELECT ... FOR UPDATE, then aggregate lock-free
+		if frappe.db.db_type == "postgres":
+			(
+				frappe.qb.from_(child)
+				.select(child.name)
+				.where(
+					(child.item_code == self.sle.item_code)
+					& (child.warehouse == self.sle.warehouse)
+					& (child.batch_no.isin(self.batchwise_valuation_batches))
+					& (child.docstatus == 1)
+					& (child.type_of_transaction.isin(["Inward", "Outward"]))
+				)
+				.for_update()
+			).run()
+		else:
+			query = query.for_update()
 
 		# Important to exclude the current voucher detail no / voucher no to calculate the correct stock value difference
 		if self.sle.voucher_detail_no:

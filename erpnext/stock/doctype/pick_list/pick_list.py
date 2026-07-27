@@ -10,7 +10,7 @@ from frappe import _, bold
 from frappe.model.mapper import map_child_doc
 from frappe.query_builder import Case
 from frappe.query_builder.custom import GROUP_CONCAT, STRING_AGG
-from frappe.query_builder.functions import Coalesce, Locate, Replace, Sum
+from frappe.query_builder.functions import Coalesce, Locate, Max, Replace, Sum
 from frappe.utils import ceil, cint, floor, flt, get_link_to_form
 from frappe.utils.nestedset import get_descendants_of
 
@@ -934,30 +934,54 @@ def update_pick_list_status(pick_list):
 def get_picked_items_qty(items, contains_packed_items=False) -> list[dict]:
 	pi_item = frappe.qb.DocType("Pick List Item")
 
-	query = (
-		frappe.qb.from_(pi_item)
-		.select(
-			pi_item.sales_order_item,
-			pi_item.product_bundle_item,
-			pi_item.item_code,
-			pi_item.sales_order,
-			Sum(pi_item.stock_qty).as_("stock_qty"),
-			Sum(pi_item.picked_qty).as_("picked_qty"),
-		)
-		.where(pi_item.docstatus == 1)
-		.for_update()
-	)
+	# pg-port: the ungrouped selects are aggregate-wrapped per branch (ANSI
+	# grouping; MySQL picked an arbitrary row's value) and the row locks are
+	# taken separately on PG, which rejects FOR UPDATE with GROUP BY
+	query = frappe.qb.from_(pi_item).where(pi_item.docstatus == 1)
 
 	if contains_packed_items:
-		query = query.groupby(
-			pi_item.product_bundle_item,
-			pi_item.sales_order,
-		).where(pi_item.product_bundle_item.isin(items))
+		query = (
+			query.select(
+				Max(pi_item.sales_order_item).as_("sales_order_item"),
+				pi_item.product_bundle_item,
+				Max(pi_item.item_code).as_("item_code"),
+				pi_item.sales_order,
+				Sum(pi_item.stock_qty).as_("stock_qty"),
+				Sum(pi_item.picked_qty).as_("picked_qty"),
+			)
+			.groupby(
+				pi_item.product_bundle_item,
+				pi_item.sales_order,
+			)
+			.where(pi_item.product_bundle_item.isin(items))
+		)
 	else:
-		query = query.groupby(
-			pi_item.sales_order_item,
-			pi_item.sales_order,
-		).where(pi_item.sales_order_item.isin(items))
+		query = (
+			query.select(
+				pi_item.sales_order_item,
+				Max(pi_item.product_bundle_item).as_("product_bundle_item"),
+				Max(pi_item.item_code).as_("item_code"),
+				pi_item.sales_order,
+				Sum(pi_item.stock_qty).as_("stock_qty"),
+				Sum(pi_item.picked_qty).as_("picked_qty"),
+			)
+			.groupby(
+				pi_item.sales_order_item,
+				pi_item.sales_order,
+			)
+			.where(pi_item.sales_order_item.isin(items))
+		)
+
+	if frappe.db.db_type == "postgres":
+		lock_query = frappe.qb.from_(pi_item).select(pi_item.name).where(pi_item.docstatus == 1)
+		lock_query = lock_query.where(
+			pi_item.product_bundle_item.isin(items)
+			if contains_packed_items
+			else pi_item.sales_order_item.isin(items)
+		)
+		lock_query.for_update().run()
+	else:
+		query = query.for_update()
 
 	return query.run(as_dict=True)
 
