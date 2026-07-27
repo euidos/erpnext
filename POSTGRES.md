@@ -117,9 +117,19 @@ list views) and the test suite expect.
   IRS 1099 with their custom fields installed) are syntax-fixed but not
   functionally exercised.
 
+## Branch policy
+
+These repos carry **only** `pg-port/version-16` — upstream ERPNext's ~555
+development branches are deliberately not kept (they were pruned after the
+fork; every one of them still lives in `frappe/erpnext`). Upstream's tags are
+kept, so the base version (`v16.29.0`) stays identifiable.
+
 ## Rebasing on upstream
 
+Upstream is not a branch in this repo, so add it as a remote once:
+
 ```sh
+git remote add upstream https://github.com/frappe/erpnext.git
 git fetch upstream version-16
 git rebase upstream/version-16 pg-port/version-16
 ```
