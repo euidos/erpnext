@@ -384,38 +384,39 @@ def get_returned_qty_map_for_row(return_against, party, row_name, doctype):
 	else:
 		party_type = "customer"
 
-	fields = [
-		{"SUM": [{"ABS": f"`tab{child_doctype}`.qty"}], "as": "qty"},
-	]
+	# pg-port: get_all with aggregate pseudo-fields injects a default ORDER BY
+	# creation, which violates PG grouping rules — build the query explicitly
+	main = DocType(doctype)
+	child = DocType(child_doctype)
+
+	select_fields = [Sum(Abs(child.qty)).as_("qty")]
 
 	if doctype != "Subcontracting Receipt":
-		fields += [
-			{"SUM": [{"ABS": f"`tab{child_doctype}`.stock_qty"}], "as": "stock_qty"},
-		]
+		select_fields.append(Sum(Abs(child.stock_qty)).as_("stock_qty"))
 
 	if doctype in ("Purchase Receipt", "Purchase Invoice", "Subcontracting Receipt"):
-		fields += [
-			{"SUM": [{"ABS": f"`tab{child_doctype}`.rejected_qty"}], "as": "rejected_qty"},
-			{"SUM": [{"ABS": f"`tab{child_doctype}`.received_qty"}], "as": "received_qty"},
+		select_fields += [
+			Sum(Abs(child.rejected_qty)).as_("rejected_qty"),
+			Sum(Abs(child.received_qty)).as_("received_qty"),
 		]
 
 		if doctype == "Purchase Receipt":
-			fields += [
-				{"SUM": [{"ABS": f"`tab{child_doctype}`.received_stock_qty"}], "as": "received_stock_qty"}
-			]
+			select_fields.append(Sum(Abs(child.received_stock_qty)).as_("received_stock_qty"))
 
 	# Used retrun against and supplier and is_retrun because there is an index added for it
-	data = frappe.get_all(
-		doctype,
-		fields=fields,
-		filters=[
-			[doctype, "return_against", "=", return_against],
-			[doctype, party_type, "=", party],
-			[doctype, "docstatus", "=", 1],
-			[doctype, "is_return", "=", 1],
-			[child_doctype, reference_field, "=", row_name],
-		],
-	)
+	data = (
+		frappe.qb.from_(main)
+		.join(child)
+		.on(child.parent == main.name)
+		.select(*select_fields)
+		.where(
+			(main.return_against == return_against)
+			& (main[party_type] == party)
+			& (main.docstatus == 1)
+			& (main.is_return == 1)
+			& (child[reference_field] == row_name)
+		)
+	).run(as_dict=True)
 
 	return data[0]
 

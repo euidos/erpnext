@@ -709,11 +709,30 @@ def get_available_qty_to_reserve(
 				& (sre.warehouse == warehouse)
 				& (sre.delivered_qty < sre.reserved_qty)
 			)
-			.for_update()
 		)
 
 		if ignore_sre:
 			query = query.where(sre.name != ignore_sre)
+
+		# pg-port: PG rejects FOR UPDATE with aggregates — take the row locks
+		# with a plain SELECT ... FOR UPDATE first, then aggregate lock-free
+		if frappe.db.db_type == "postgres":
+			lock_query = (
+				frappe.qb.from_(sre)
+				.select(sre.name)
+				.where(
+					(sre.docstatus == 1)
+					& (sre.item_code == item_code)
+					& (sre.warehouse == warehouse)
+					& (sre.delivered_qty < sre.reserved_qty)
+				)
+				.for_update()
+			)
+			if ignore_sre:
+				lock_query = lock_query.where(sre.name != ignore_sre)
+			lock_query.run()
+		else:
+			query = query.for_update()
 
 		reserved_qty = query.run()[0][0] or 0.0
 

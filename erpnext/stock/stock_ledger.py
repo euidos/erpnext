@@ -10,7 +10,7 @@ import frappe
 from frappe import _, bold, scrub
 from frappe.model.meta import get_field_precision
 from frappe.query_builder import Order
-from frappe.query_builder.functions import Sum
+from frappe.query_builder.functions import Min, Sum
 from frappe.utils import (
 	add_to_date,
 	cint,
@@ -379,13 +379,23 @@ def get_items_to_be_repost(voucher_type=None, voucher_no=None, doc=None, reposti
 		items_to_be_repost = json.loads(doc.items_to_be_repost)
 
 	if not items_to_be_repost and voucher_type and voucher_no:
-		items_to_be_repost = frappe.db.get_all(
-			"Stock Ledger Entry",
-			filters={"voucher_type": voucher_type, "voucher_no": voucher_no},
-			fields=["item_code", "warehouse", "posting_date", "posting_time", "creation", "posting_datetime"],
-			order_by="creation asc",
-			group_by="item_code, warehouse",
-		)
+		# pg-port: bare per-row fields under GROUP BY violate PG grouping
+		# rules; Min() pins the repost origin to the earliest entry per pair
+		# (deterministic, and reposting from earlier is always safe)
+		sle = frappe.qb.DocType("Stock Ledger Entry")
+		items_to_be_repost = (
+			frappe.qb.from_(sle)
+			.select(
+				sle.item_code,
+				sle.warehouse,
+				Min(sle.posting_date).as_("posting_date"),
+				Min(sle.posting_time).as_("posting_time"),
+				Min(sle.creation).as_("creation"),
+				Min(sle.posting_datetime).as_("posting_datetime"),
+			)
+			.where((sle.voucher_type == voucher_type) & (sle.voucher_no == voucher_no))
+			.groupby(sle.item_code, sle.warehouse)
+		).run(as_dict=True)
 
 	return items_to_be_repost or []
 

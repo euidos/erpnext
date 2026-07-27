@@ -11,7 +11,7 @@ from frappe import _, msgprint
 from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 from frappe.query_builder import Case
-from frappe.query_builder.functions import IfNull, Sum
+from frappe.query_builder.functions import IfNull, Max, Min, NullIf, Sum
 from frappe.utils import (
 	add_days,
 	ceil,
@@ -1299,18 +1299,20 @@ def get_exploded_items(item_details, company, bom_no, include_non_stock_items, p
 		.left_join(item_uom)
 		.on((item.name == item_uom.parent) & (item_uom.uom == item.purchase_uom))
 		.select(
-			(IfNull(Sum(bei.stock_qty / IfNull(bom.quantity, 1)), 0) * planned_qty).as_("qty"),
+			(IfNull(Sum(bei.stock_qty / NullIf(IfNull(bom.quantity, 1), 0)), 0) * planned_qty).as_("qty"),
 			item.item_name,
 			item.name.as_("item_code"),
-			bei.description,
+			# pg-port: bei/item_default/item_uom columns are not covered by
+			# the group key — aggregate them (1:1 per item in a BOM)
+			Max(bei.description).as_("description"),
 			bei.stock_uom,
 			item.min_order_qty,
-			bei.source_warehouse,
+			Max(bei.source_warehouse).as_("source_warehouse"),
 			item.default_material_request_type,
 			item.min_order_qty,
-			item_default.default_warehouse,
+			Max(item_default.default_warehouse).as_("default_warehouse"),
 			item.purchase_uom,
-			item_uom.conversion_factor,
+			Max(item_uom.conversion_factor).as_("conversion_factor"),
 			item.safety_stock,
 			bom.item.as_("main_bom_item"),
 			bom.name.as_("main_bom"),
@@ -1321,7 +1323,8 @@ def get_exploded_items(item_details, company, bom_no, include_non_stock_items, p
 			& (bom.name == bom_no)
 			& (item.is_stock_item.isin([0, 1]) if include_non_stock_items else item.is_stock_item == 1)
 		)
-		.groupby(bei.item_code, bei.stock_uom)
+		# pg-port: item.name/bom.name are PKs — their bare selects are covered
+		.groupby(bei.item_code, bei.stock_uom, item.name, bom.name)
 	).run(as_dict=True)
 
 	for d in data:
@@ -1369,22 +1372,24 @@ def get_subitems(
 			bom_item.item_code,
 			item.default_material_request_type,
 			item.item_name,
-			IfNull(parent_qty * Sum(bom_item.stock_qty / IfNull(bom.quantity, 1)) * planned_qty, 0).as_(
+			IfNull(parent_qty * Sum(bom_item.stock_qty / NullIf(IfNull(bom.quantity, 1), 0)) * planned_qty, 0).as_(
 				"qty"
 			),
 			item.is_sub_contracted_item.as_("is_sub_contracted"),
-			bom_item.source_warehouse,
+			# pg-port: bom_item/item_default/item_uom columns are not covered
+			# by the group key — aggregate them (1:1 per item in a BOM)
+			Max(bom_item.source_warehouse).as_("source_warehouse"),
 			item.default_bom.as_("default_bom"),
-			bom_item.description.as_("description"),
-			bom_item.stock_uom.as_("stock_uom"),
+			Max(bom_item.description).as_("description"),
+			Max(bom_item.stock_uom).as_("stock_uom"),
 			item.min_order_qty.as_("min_order_qty"),
 			item.safety_stock.as_("safety_stock"),
-			item_default.default_warehouse,
+			Max(item_default.default_warehouse).as_("default_warehouse"),
 			item.purchase_uom,
-			item_uom.conversion_factor,
+			Max(item_uom.conversion_factor).as_("conversion_factor"),
 			bom.item.as_("main_bom_item"),
 			bom.name.as_("main_bom"),
-			bom_item.is_phantom_item,
+			Max(bom_item.is_phantom_item).as_("is_phantom_item"),
 		)
 		.where(
 			(bom.name == bom_no)
@@ -1395,8 +1400,10 @@ def get_subitems(
 				| (bom_item.is_phantom_item == 1)
 			)
 		)
-		.groupby(bom_item.item_code)
-		.orderby(bom_item.idx)
+		# pg-port: item.name/bom.name are PKs, so their tables' bare selects
+		# are functional-dependency-covered; idx must be aggregated to order
+		.groupby(bom_item.item_code, item.name, bom.name)
+		.orderby(Min(bom_item.idx))
 	).run(as_dict=True)
 
 	for d in items:
@@ -2085,7 +2092,7 @@ def get_raw_materials_of_sub_assembly_items(
 		.left_join(item_uom)
 		.on((item.name == item_uom.parent) & (item_uom.uom == item.purchase_uom))
 		.select(
-			(IfNull(Sum(bei.stock_qty / IfNull(bom.quantity, 1)), 0) * planned_qty).as_("qty"),
+			(IfNull(Sum(bei.stock_qty / NullIf(IfNull(bom.quantity, 1), 0)), 0) * planned_qty).as_("qty"),
 			item.item_name,
 			item.name.as_("item_code"),
 			bei.description,

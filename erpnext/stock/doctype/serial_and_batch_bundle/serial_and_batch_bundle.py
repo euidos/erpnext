@@ -3132,7 +3132,10 @@ def get_available_batches(kwargs):
 		)
 		.where(batch_table.disabled == 0)
 		.where(stock_ledger_entry.is_cancelled == 0)
-		.groupby(batch_ledger.batch_no, batch_ledger.warehouse)
+		# pg-port: batch_table.name is its PK — grouping by it lets PG accept
+		# the bare expiry_date select and creation ordering (same row set:
+		# name == batch_ledger.batch_no via the join)
+		.groupby(batch_ledger.batch_no, batch_ledger.warehouse, batch_table.name)
 	)
 
 	if kwargs.get("company"):
@@ -3427,13 +3430,21 @@ def get_stock_ledgers_for_serial_nos(kwargs):
 		escaped_serial_nos = [re.escape(sn) for sn in serial_nos if sn]
 		regex_pattern = r"\n(" + "|".join(escaped_serial_nos) + r")\n"
 
+		# pg-port: REGEXP is MySQL syntax; PG 15+ spells it regexp_like()
+		serial_haystack = Concat_ws("", "\n", stock_ledger_entry.serial_no, "\n")
+		if frappe.db.db_type == "postgres":
+			from frappe.query_builder import CustomFunction
+
+			regex_cond = CustomFunction("regexp_like", ["subject", "pattern"])(
+				serial_haystack, regex_pattern
+			)
+		else:
+			regex_cond = serial_haystack.regexp(regex_pattern)
+
 		query = (
 			query.left_join(serial_batch_entry)
 			.on(stock_ledger_entry.serial_and_batch_bundle == serial_batch_entry.parent)
-			.where(
-				serial_batch_entry.serial_no.isin(serial_nos)
-				| Concat_ws("", "\n", stock_ledger_entry.serial_no, "\n").regexp(regex_pattern)
-			)
+			.where(serial_batch_entry.serial_no.isin(serial_nos) | regex_cond)
 			.distinct()
 		)
 
@@ -3462,7 +3473,14 @@ def get_stock_ledgers_batches(kwargs):
 			batch_table.expiry_date,
 		)
 		.where((stock_ledger_entry.is_cancelled == 0) & (stock_ledger_entry.batch_no.isnotnull()))
-		.groupby(stock_ledger_entry.batch_no, stock_ledger_entry.warehouse)
+		# pg-port: item_code is 1:1 with batch; grouping Batch's PK covers the
+		# bare expiry_date select and creation ordering
+		.groupby(
+			stock_ledger_entry.batch_no,
+			stock_ledger_entry.warehouse,
+			stock_ledger_entry.item_code,
+			batch_table.name,
+		)
 	)
 
 	if kwargs.get("company"):

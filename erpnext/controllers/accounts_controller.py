@@ -2341,6 +2341,9 @@ class AccountsController(TransactionBase):
 			.where(adv.delinked == 0)
 			.where(adv.against_voucher_type == self.doctype)
 			.where(adv.against_voucher_no == self.name)
+			# pg-port: bare currency next to an aggregate needs grouping; one
+			# advance ledger uses one currency, so the row set is unchanged
+			.groupby(adv.currency)
 			.run(as_dict=True)
 		)
 
@@ -2364,15 +2367,17 @@ class AccountsController(TransactionBase):
 		new_status = None
 
 		PaymentRequest = frappe.qb.DocType("Payment Request")
-		paid_amount = frappe.get_value(
-			doctype="Payment Request",
-			filters={
-				"reference_doctype": self.doctype,
-				"reference_name": self.name,
-				"docstatus": 1,
-			},
-			fieldname=Sum(PaymentRequest.grand_total - PaymentRequest.outstanding_amount),
-		)
+		# pg-port: get_value with an aggregate injects a default ORDER BY
+		# creation, which violates PG grouping rules — query explicitly
+		paid_amount = (
+			frappe.qb.from_(PaymentRequest)
+			.select(Sum(PaymentRequest.grand_total - PaymentRequest.outstanding_amount))
+			.where(
+				(PaymentRequest.reference_doctype == self.doctype)
+				& (PaymentRequest.reference_name == self.name)
+				& (PaymentRequest.docstatus == 1)
+			)
+		).run()[0][0]
 
 		if not paid_amount:
 			if self.doctype in self.get_advance_payment_doctypes(payment_type="receivable"):

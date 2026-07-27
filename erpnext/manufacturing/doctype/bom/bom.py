@@ -1149,7 +1149,7 @@ class BOM(WebsiteGenerator):
 				bom_item.rate,
 				bom_item.include_item_in_manufacturing,
 				bom_item.sourced_by_supplier,
-				bom_item.stock_qty / ifnull(bom.quantity, 1) AS qty_consumed_per_unit
+				bom_item.stock_qty / nullif(ifnull(bom.quantity, 1), 0) AS qty_consumed_per_unit
 			FROM `tabBOM Explosion Item` bom_item, `tabBOM` bom
 			WHERE
 				bom_item.parent = bom.name
@@ -1402,7 +1402,7 @@ def get_bom_items_as_dict(
 				bom_item.item_code,
 				{idx_column} as idx,
 				max(item.item_name) as item_name,
-				sum(bom_item.{qty_field}/ifnull(bom.quantity, 1)) * %(qty)s as qty,
+				sum(bom_item.{qty_field}/nullif(ifnull(bom.quantity, 1), 0)) * %(qty)s as qty,
 				max(item.image) as image,
 				max(bom.project) as project,
 				max(item.stock_uom) as stock_uom,
@@ -1440,7 +1440,7 @@ def get_bom_items_as_dict(
 				max(bom_item.include_item_in_manufacturing) as include_item_in_manufacturing,
 				max(bom_item.description) as description, max(bom_item.rate) as rate,
 				max(bom_item.sourced_by_supplier) as sourced_by_supplier,
-				sum(bom_item.stock_qty * bom_item.rate / ifnull(bom.quantity, 1)) * %(qty)s as amount""",
+				sum(bom_item.stock_qty * bom_item.rate / nullif(ifnull(bom.quantity, 1), 0)) * %(qty)s as amount""",
 		)
 
 		items = frappe.db.sql(
@@ -1463,7 +1463,7 @@ def get_bom_items_as_dict(
 	else:
 		query = query.format(
 			table="BOM Item",
-			where_conditions="or bom_item.is_phantom_item)",
+			where_conditions="or bom_item.is_phantom_item = 1)",  # pg-port: smallint is not boolean on PG
 			is_stock_item=is_stock_item,
 			qty_field="stock_qty" if fetch_qty_in_stock_uom else "qty",
 			idx_column="min(bom_item.idx)",
@@ -1472,7 +1472,7 @@ def get_bom_items_as_dict(
 				max(bom_item.operation) as operation,
 				max(bom_item.include_item_in_manufacturing) as include_item_in_manufacturing,
 				max(bom_item.sourced_by_supplier) as sourced_by_supplier,
-				sum(bom_item.stock_qty * bom_item.rate / ifnull(bom.quantity, 1)) * %(qty)s as amount,
+				sum(bom_item.stock_qty * bom_item.rate / nullif(ifnull(bom.quantity, 1), 0)) * %(qty)s as amount,
 				max(bom_item.description) as description, max(bom_item.base_rate) as rate,
 				max(bom_item.operation_row_id) as operation_row_id,
 				max(bom_item.is_phantom_item) as is_phantom_item, max(bom_item.bom_no) as bom_no """,

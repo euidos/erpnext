@@ -1,0 +1,97 @@
+# ERPNext on PostgreSQL (euidos pg-port)
+
+This fork (`euidos/erpnext`, branch `pg-port/version-16`) runs ERPNext on
+PostgreSQL 17. Upstream ERPNext supports MariaDB only; the frappe framework's
+postgres support is official-but-experimental. Everything here keeps the
+MariaDB path byte-for-byte identical unless a comment marked `pg-port:` says
+otherwise, so rebases onto upstream `version-16` stay cheap.
+
+## How the port works
+
+Three layers, smallest-diff-first:
+
+1. **`erpnext/setup/pg_compat.sql`** — MariaDB builtins recreated as SQL
+   functions in the site's `public` schema: `ifnull`, `if`, `curdate`,
+   `datediff`, `date_add`/`date_sub`, `to_days`, `last_day`, `year`/`month`/
+   `day`/`hour`/`minute`/`second`/`week`/`quarter`, `monthname`, `dayofweek`,
+   `dayofyear`, `unix_timestamp`, `from_unixtime`, `truncate`, `instr`,
+   `timediff`, `field`, a `group_concat` aggregate and a token-translating
+   `date_format`. Each datetime helper has `timestamp` and `timestamptz`
+   overloads (PG will not implicitly cast `now()` to plain timestamp during
+   function resolution; `timestamptz` is the datetime category's preferred
+   type, so unknown literals resolve there deterministically).
+   Installed by `erpnext.setup.install.setup_pg_compat` via the
+   `before_install` and `after_migrate` hooks — no-op on MariaDB, idempotent
+   (`CREATE OR REPLACE` throughout), and safe to re-run any time:
+   `bench --site <site> execute erpnext.setup.install.setup_pg_compat`.
+
+2. **`erpnext/pg_driver_compat.py`** — registers identity JSON loaders with
+   psycopg2 so `json`/`jsonb` columns come back as *strings*, which is what
+   MariaDB (LONGTEXT) does and what every `json.loads` call site in frappe and
+   erpnext expects. Imported from `erpnext/__init__.py`.
+
+3. **Call-site edits**, each tagged `pg-port:` — only where MySQL *syntax or
+   semantics* cannot be bridged by a function:
+   - ANSI grouping: ungrouped selects aggregate-wrapped (`Max`/`Min`) or the
+     group key extended; the same SQL runs on both engines. MySQL previously
+     returned an arbitrary row's value — the aggregate makes it deterministic.
+   - Double-quoted string literals → single quotes (PG treats `"x"` as an
+     identifier).
+   - `LIMIT off, cnt` → `LIMIT cnt OFFSET off`; alias-in-HAVING → expression
+     in WHERE/HAVING; `(SELECT alias)` → repeated expression; `'a' - 'b'`
+     string math → `TIMEDIFF`.
+   - `TIMESTAMP(date, time)`, `FORCE INDEX`, `INTERVAL N unit`, zero-date
+     `'0000-00-00'` comparisons, `GROUP_CONCAT ... SEPARATOR` → engine-gated
+     (`frappe.db.db_type`) or rewritten portably (`INTERVAL 'N' unit` parses
+     on both engines).
+   - Unquoted mixed-case table refs (`tabItem.x` outside `from`) → backticked
+     (frappe's PG adapter translates backticks to double quotes).
+   - `frappe.db.get_value`/`get_all` with aggregate pseudo-fields
+     (`{"MAX": ...}`) → explicit query-builder queries (frappe injects a
+     default `ORDER BY creation` that violates PG grouping rules).
+
+## Deviations from MySQL behaviour (accepted)
+
+- `week()` uses ISO week numbering (MySQL mode 0 differs by ±1 at year
+  boundaries); ERPNext only buckets rows by week.
+- Aggregate-wrapped formerly-arbitrary values are now deterministic
+  (`Max`/`Min`), on MariaDB too.
+- `group_concat` supports no inline `ORDER BY`/custom separator (the two call
+  sites that needed `SEPARATOR` now use engine-gated `STRING_AGG`).
+
+## Known-not-ported
+
+- `erpnext/patches/**` — migration patches for pre-existing MariaDB sites.
+  **Postgres sites must be created fresh at or after this branch's version**
+  (fresh installs mark all patches as executed). Cross-engine data moves use
+  the pgloader runbook (fleet-infra `spec-pg-migration`), not patches.
+- `Project Update` daily email queries reference columns that do not exist in
+  the doctype — broken upstream on both engines, left as-is.
+- Regional fixtures beyond the wizard defaults (UAE VAT, IRS 1099 custom
+  fields) are syntax-fixed but not functionally exercised.
+
+## Verified on postgres:17 / frappe version-16
+
+- `bench new-site --db-type postgres --install-app erpnext` — clean, twice
+  (second run exercising the before_install hook).
+- Setup wizard (company, standard COA, fiscal year, KRW).
+- Transaction flows: PO→PR→PI, SO→DN→SI→Payment Entry, stock transfer,
+  BOM→Work Order→transfer+manufacture entries.
+- Reports: General Ledger, Stock Ledger, AR, AP, Trial Balance, Balance
+  Sheet, P&L, Stock Balance.
+- Link-field search queries (item/lead/warehouse/employee/project-users).
+- Static sweep: all 459 raw `frappe.db.sql` strings EXPLAINed against a live
+  PG site; remaining flags are substitution artifacts or engine-gated code.
+- erpnext test suite: see fleet-infra board `spec-erpnext-pg` for the
+  current module-by-module status.
+
+## Rebasing on upstream
+
+```sh
+git fetch upstream version-16
+git rebase upstream/version-16 pg-port/version-16
+```
+
+Conflicts should only appear where upstream touched a `pg-port:`-tagged line.
+After rebasing: reinstall a scratch PG site, run the e2e flow script and the
+EXPLAIN sweep, then run the module tests.

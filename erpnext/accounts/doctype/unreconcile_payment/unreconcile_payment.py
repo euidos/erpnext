@@ -130,8 +130,19 @@ def get_linked_payments_for_doc(
 					ple.account_currency,
 				)
 				.where(Criterion.all(criteria))
-				.groupby(ple.voucher_no, ple.against_voucher_no)
-				.having(qb.Field("allocated_amount") > 0)
+				# pg-port: ANSI grouping (bare selects grouped; they are 1:1
+				# with voucher_no) and HAVING on the expression, not the alias
+				.groupby(
+					ple.account,
+					ple.party_type,
+					ple.party,
+					ple.company,
+					ple.voucher_type,
+					ple.voucher_no,
+					ple.against_voucher_no,
+					ple.account_currency,
+				)
+				.having(Abs(Sum(ple.amount_in_account_currency)) > 0)
 				.run(as_dict=True)
 			)
 			return res
@@ -156,7 +167,16 @@ def get_linked_payments_for_doc(
 					ple.account_currency,
 				)
 				.where(Criterion.all(criteria))
-				.groupby(ple.against_voucher_no)
+				# pg-port: ANSI grouping, same reasoning as above
+				.groupby(
+					ple.company,
+					ple.account,
+					ple.party_type,
+					ple.party,
+					ple.against_voucher_type,
+					ple.against_voucher_no,
+					ple.account_currency,
+				)
 			)
 
 			res = query.run(as_dict=True)
@@ -187,8 +207,9 @@ def get_linked_advances(company, docname):
 			adv.currency,
 		)
 		.where(Criterion.all(criteria))
-		.having(qb.Field("allocated_amount") > 0)
-		.groupby(adv.against_voucher_no)
+		# pg-port: ANSI grouping + HAVING on the expression, not the alias
+		.having(Abs(Sum(adv.amount)) > 0)
+		.groupby(adv.company, adv.against_voucher_type, adv.against_voucher_no, adv.currency)
 		.run(as_dict=True)
 	)
 

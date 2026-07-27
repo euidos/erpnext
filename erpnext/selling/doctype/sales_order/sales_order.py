@@ -684,12 +684,14 @@ class SalesOrder(SellingController):
 
 		for item in self.items:
 			if item.delivered_by_supplier:
-				item_delivered_qty = frappe.get_all(
-					"Purchase Order Item",
-					{"sales_order_item": item.name, "docstatus": 1},
-					[{"SUM": "received_qty", "AS": "received_qty"}],
-					pluck="received_qty",
-				)[0]
+				# pg-port: get_all with an aggregate injects a default ORDER BY
+				# creation, which violates PG grouping rules — query explicitly
+				poi = frappe.qb.DocType("Purchase Order Item")
+				item_delivered_qty = (
+					frappe.qb.from_(poi)
+					.select(frappe.query_builder.functions.Sum(poi.received_qty))
+					.where((poi.sales_order_item == item.name) & (poi.docstatus == 1))
+				).run()[0][0]
 				item.db_set("delivered_qty", flt(item_delivered_qty), update_modified=False)
 
 			delivered_qty += min(item.delivered_qty, item.qty)

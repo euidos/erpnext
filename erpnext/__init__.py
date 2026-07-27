@@ -6,6 +6,8 @@ import frappe
 from frappe.model.document import Document
 from frappe.utils.user import is_website_user
 
+import erpnext.pg_driver_compat  # noqa: F401  # pg-port: JSON columns as strings, like MariaDB
+
 __version__ = "16.29.0"
 
 

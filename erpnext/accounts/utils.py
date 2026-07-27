@@ -2216,7 +2216,7 @@ def delink_original_entry(pl_entry, partial_cancel=False):
 			qb.update(ple)
 			.set(ple.modified, now())
 			.set(ple.modified_by, frappe.session.user)
-			.set(ple.delinked, True)
+			.set(ple.delinked, 1)  # pg-port: delinked is smallint; booleans don't coerce on PG
 			.where(
 				(ple.company == pl_entry.company)
 				& (ple.account_type == pl_entry.account_type)
