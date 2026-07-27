@@ -1751,25 +1751,37 @@ def get_future_stock_vouchers(posting_date, posting_time, for_warehouses=None, f
 
 	SLE = DocType("Stock Ledger Entry")
 
+	# pg-port: DISTINCT with unselected ORDER BY keys (and FOR UPDATE on top)
+	# is MySQL-only. GROUP BY voucher ordered by its earliest entry is the
+	# same voucher sequence, deterministic, and valid on both engines; on PG
+	# the row locks are taken with a separate plain SELECT ... FOR UPDATE.
+	conditions = [
+		SLE.posting_datetime >= posting_datetime,
+		SLE.is_cancelled == 0,
+	]
+
+	if for_items:
+		conditions.append(SLE.item_code.isin(for_items))
+
+	if for_warehouses:
+		conditions.append(SLE.warehouse.isin(for_warehouses))
+
+	if company:
+		conditions.append(SLE.company == company)
+
 	query = (
 		frappe.qb.from_(SLE)
 		.select(SLE.voucher_type, SLE.voucher_no)
-		.distinct()
-		.where(SLE.posting_datetime >= posting_datetime)
-		.where(SLE.is_cancelled == 0)
-		.orderby(SLE.posting_datetime)
-		.orderby(SLE.creation)
-		.for_update()
+		.where(Criterion.all(conditions))
+		.groupby(SLE.voucher_type, SLE.voucher_no)
+		.orderby(Min(SLE.posting_datetime))
+		.orderby(Min(SLE.creation))
 	)
 
-	if for_items:
-		query = query.where(SLE.item_code.isin(for_items))
-
-	if for_warehouses:
-		query = query.where(SLE.warehouse.isin(for_warehouses))
-
-	if company:
-		query = query.where(SLE.company == company)
+	if frappe.db.db_type == "postgres":
+		frappe.qb.from_(SLE).select(SLE.name).where(Criterion.all(conditions)).for_update().run()
+	else:
+		query = query.for_update()
 
 	future_stock_vouchers = query.run(as_dict=True)
 
@@ -2331,8 +2343,10 @@ class QueryPaymentLedger:
 				.where(Criterion.all(self.dimensions_filter))
 				.where(Criterion.all(self.voucher_posting_date))
 				.groupby(ple.against_voucher_type, ple.against_voucher_no, ple.party_type, ple.party)
-				.orderby(ple.invoice_date, ple.voucher_no)
-				.having(qb.Field("amount_in_account_currency") > 0)
+				# pg-port: order by the OUTPUT aliases (ple.invoice_date is not
+				# a real column) and put the aggregate itself in HAVING
+				.orderby(qb.Field("invoice_date"), qb.Field("voucher_no"))
+				.having(Sum(ple.amount_in_account_currency) > 0)
 				.limit(self.limit)
 				.run()
 			)

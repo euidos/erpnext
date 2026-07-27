@@ -96,7 +96,7 @@ def get_depreciable_assets_data(date):
 		.where(a.status.isin(["Submitted", "Partially Depreciated"]))
 		.where(ds.journal_entry.isnull())
 		.where(ds.schedule_date <= date)
-		.groupby(ads.name)
+		.groupby(ads.name, a.name)  # pg-port: a.name is Asset's PK — covers select + ordering
 		.orderby(a.creation, order=Order.desc)
 	)
 

@@ -2776,7 +2776,13 @@ class TestPurchaseReceipt(ERPNextTestSuite):
 		self.assertEqual(flt(pr.total * pr.conversion_rate, 2), flt(pr.base_total, 2))
 
 		# Test - 2: Sum of Debit or Credit should be equal to Purchase Receipt Base Total
-		amount = frappe.db.get_value("GL Entry", {"docstatus": 1, "voucher_no": pr.name}, [{"SUM": "debit"}])
+		# pg-port: get_value with an aggregate injects ORDER BY creation
+		gle = frappe.qb.DocType("GL Entry")
+		amount = (
+			frappe.qb.from_(gle)
+			.select(frappe.query_builder.functions.Sum(gle.debit))
+			.where((gle.docstatus == 1) & (gle.voucher_no == pr.name))
+		).run()[0][0]
 		expected_amount = pr.base_total
 		self.assertEqual(amount, expected_amount)
 

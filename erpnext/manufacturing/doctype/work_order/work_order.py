@@ -2735,16 +2735,23 @@ def get_disassembly_available_qty(stock_entry_name: str, current_se_name: str | 
 	if not se:
 		return 0.0
 
-	filters = {
-		"source_stock_entry": stock_entry_name,
-		"purpose": "Disassemble",
-		"docstatus": 1,
-	}
+	# pg-port: get_value with an aggregate injects a default ORDER BY
+	# creation, which violates PG grouping rules — query explicitly
+	dis_se = frappe.qb.DocType("Stock Entry")
+	dis_query = (
+		frappe.qb.from_(dis_se)
+		.select(frappe.query_builder.functions.Sum(dis_se.fg_completed_qty))
+		.where(
+			(dis_se.source_stock_entry == stock_entry_name)
+			& (dis_se.purpose == "Disassemble")
+			& (dis_se.docstatus == 1)
+		)
+	)
 
 	if current_se_name:
-		filters["name"] = ("!=", current_se_name)
+		dis_query = dis_query.where(dis_se.name != current_se_name)
 
-	already_disassembled = flt(frappe.db.get_value("Stock Entry", filters, [{"SUM": "fg_completed_qty"}]))
+	already_disassembled = flt(dis_query.run()[0][0])
 
 	return flt(se.fg_completed_qty) - already_disassembled
 

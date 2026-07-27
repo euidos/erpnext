@@ -3587,7 +3587,7 @@ def update_invoice_status():
 			& (invoice.outstanding_amount > 0)
 			& (invoice.status.like("Unpaid%") | invoice.status.like("Partly Paid%"))
 			& (
-				((invoice.is_pos & invoice.due_date < today) | is_overdue)
+				(((invoice.is_pos == 1) & (invoice.due_date < today)) | is_overdue)  # pg-port: smallint is not boolean
 				if doctype == "Sales Invoice"
 				else is_overdue
 			)

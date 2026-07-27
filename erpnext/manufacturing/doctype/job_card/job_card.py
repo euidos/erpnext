@@ -242,16 +242,18 @@ class JobCard(Document):
 
 		wo_qty = wo_qty + (wo_qty * over_production_percentage / 100)
 
-		job_card_qty = frappe.get_all(
-			"Job Card",
-			fields=[{"SUM": "for_quantity"}],
-			filters={
-				"work_order": self.work_order,
-				"operation_id": self.operation_id,
-				"docstatus": ["!=", 2],
-			},
-			as_list=1,
-		)
+		# pg-port: get_all with an aggregate injects a default ORDER BY
+		# creation, which violates PG grouping rules — query explicitly
+		jc = frappe.qb.DocType("Job Card")
+		job_card_qty = (
+			frappe.qb.from_(jc)
+			.select(frappe.query_builder.functions.Sum(jc.for_quantity))
+			.where(
+				(jc.work_order == self.work_order)
+				& (jc.operation_id == self.operation_id)
+				& (jc.docstatus != 2)
+			)
+		).run()
 
 		job_card_qty = flt(job_card_qty[0][0]) if job_card_qty else 0
 

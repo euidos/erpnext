@@ -9,7 +9,7 @@ import frappe
 from frappe import _, bold
 from frappe.model.mapper import get_mapped_doc
 from frappe.query_builder import DocType
-from frappe.query_builder.functions import Max, Sum
+from frappe.query_builder.functions import Max, Min, Sum
 from frappe.utils import (
 	cint,
 	comma_or,
@@ -2836,12 +2836,17 @@ class StockEntry(StockController, SubcontractingInwardController):
 				.run(as_dict=True)
 			)
 
+		# pg-port: ANSI grouping — aggregate the per-row columns (1:1 per
+		# item within a work order's manufacture entries) and the order key
+		aggregated_fields = [
+			f if f.name == "item_code" else Max(f).as_(f.name) for f in common_fields
+		]
 		return (
-			query.select(Sum(SED.qty).as_("qty"), Sum(SED.transfer_qty).as_("transfer_qty"), *common_fields)
+			query.select(Sum(SED.qty).as_("qty"), Sum(SED.transfer_qty).as_("transfer_qty"), *aggregated_fields)
 			.where(SE.purpose == "Manufacture")
 			.where(SE.work_order == self.work_order)
 			.groupby(SED.item_code)
-			.orderby(SED.idx)
+			.orderby(Min(SED.idx))
 			.run(as_dict=True)
 		)
 
